@@ -75,12 +75,24 @@ printf '\n'
 # 1. Every English page: compare against the recorded source commit.
 # ---------------------------------------------------------------------------
 shopt -s nullglob
-for en_file in "$EN_DIR"/*.md; do
+# Translated files live under wiki/en_us/, plus README.en_us.md at the repo root.
+en_files=("$EN_DIR"/*.md)
+[ -f "$REPO_ROOT/README.en_us.md" ] && en_files+=("$REPO_ROOT/README.en_us.md")
+
+for en_file in "${en_files[@]}"; do
     en_name="$(basename "$en_file")"
 
     # `wiki/<something>.md` inside the "Source page" row
     source_page="$(grep -m1 'Source page' "$en_file" \
         | sed -n 's/.*`wiki\/\([^`]*\)`.*/\1/p')"
+    # Root-level documents record their source without the wiki/ prefix.
+    if [ -z "$source_page" ]; then
+        source_page="$(grep -m1 'Source document' "$en_file" \
+            | sed -n 's/.*`\([^`]*\.md\)`.*/\1/p')"
+        source_root="$REPO_ROOT"
+    else
+        source_root="$WIKI"
+    fi
     # `<hash>` inside the "Source version" row
     source_commit="$(grep -m1 'Source version' "$en_file" \
         | sed -n 's/.*commit `\([0-9a-f]\{7,40\}\)`.*/\1/p')"
@@ -93,7 +105,7 @@ for en_file in "$EN_DIR"/*.md; do
 
     translated_sources="$translated_sources|$source_page"
 
-    if [ ! -f "$WIKI/$source_page" ]; then
+    if [ ! -f "$source_root/$source_page" ]; then
         # The Chinese source is gone. Either it was deleted upstream, in which
         # case this translation should be deleted too, or it was renamed, in
         # which case the metadata needs to point at the new name.
@@ -112,7 +124,8 @@ for en_file in "$EN_DIR"/*.md; do
         continue
     fi
 
-    changes="$(git log --oneline "$source_commit"..HEAD -- "wiki/$source_page" 2>/dev/null)"
+    rel="${source_root#$REPO_ROOT/}"; [ "$rel" = "$REPO_ROOT" ] && rel=""
+    changes="$(git log --oneline "$source_commit"..HEAD -- "${rel:+$rel/}$source_page" 2>/dev/null)"
 
     if [ -z "$changes" ]; then
         if [ "$QUIET" -eq 0 ]; then
